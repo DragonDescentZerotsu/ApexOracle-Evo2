@@ -278,6 +278,8 @@ This fork adds a record-aware extraction CLI for the genome-window representatio
 ApexOracle. The ApexOracle defaults use 11,000 nt windows, a 10,000 nt step, the Evo 2 40B
 `blocks.46.mlp.l3` activation, and mean pooling over valid (non-padding) tokens. Every tensor is
 accompanied by a JSON manifest containing FASTA, model, layer, coordinate, and tensor provenance.
+The fork version `0.6.0+apexoracle.1` is based on ArcInstitute Evo 2 upstream commit `53f1959` and
+retains the upstream Apache-2.0 license and notices.
 
 Validate the complete FASTA window plan without loading model weights:
 
