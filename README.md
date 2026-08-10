@@ -272,6 +272,37 @@ else:
 
 You can use [Savanna](https://github.com/Zymrael/savanna) or [Nvidia BioNemo](https://github.com/NVIDIA/bionemo-framework) for embedding long sequences. Vortex can currently compute over very long sequences via teacher prompting, however please note that forward pass on long sequences may currently be slow.
 
+### ApexOracle genome embeddings
+
+This fork adds a record-aware extraction CLI for the genome-window representations consumed by
+ApexOracle. The ApexOracle defaults use 11,000 nt windows, a 10,000 nt step, the Evo 2 40B
+`blocks.46.mlp.l3` activation, and mean pooling over valid (non-padding) tokens. Every tensor is
+accompanied by a JSON manifest containing FASTA, model, layer, coordinate, and tensor provenance.
+
+Validate the complete FASTA window plan without loading model weights:
+
+```bash
+apexoracle-evo2-extract \
+  --input genome.fasta \
+  --output-dir genome_embeddings \
+  --plan-only
+```
+
+Run extraction after installing Evo 2 and making the required GPUs available:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
+  --input genome.fasta \
+  --output-dir genome_embeddings \
+  --model-name evo2_40b \
+  --batch-size 3 \
+  --input-device cuda:0
+```
+
+For a directory input, supported FASTA files are processed in filename order. Records and windows
+retain their input order. Checkpoints, FASTA files, tensors, and other generated assets are not
+stored in this repository.
+
 ## Dataset
 
 The OpenGenome2 dataset used for pretraining Evo2 is available on [HuggingFace ](https://huggingface.co/datasets/arcinstitute/opengenome2). Data is available either as raw fastas or as JSONL files which include preprocessing and data augmentation.
@@ -296,4 +327,3 @@ If you find these models useful for your research, please cite the relevant pape
     url     = {https://doi.org/10.1038/s41586-026-10176-5},
 }
 ```
-

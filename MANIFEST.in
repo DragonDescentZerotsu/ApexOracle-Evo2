@@ -1,0 +1,4 @@
+prune build
+prune dist
+prune vortex
+global-exclude __pycache__ *.py[cod] *.log *.pt *.pth *.ckpt

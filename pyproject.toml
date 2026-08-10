@@ -23,12 +23,15 @@ dependencies = [
 Homepage = "https://github.com/arcinstitute/evo2"
 Repository = "https://github.com/arcinstitute/evo2"
 
+[project.scripts]
+apexoracle-evo2-extract = "apexoracle_evo2.cli:main"
+
 [tool.setuptools]
 package-dir = {"" = "."}
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["evo2*"]
+include = ["evo2*", "apexoracle_evo2*"]
 
 [tool.setuptools.package-data]
 "evo2" = ["configs/*.yml"]
