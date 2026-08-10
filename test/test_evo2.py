@@ -1,9 +1,16 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import argparse
 import csv
 from pathlib import Path
 from typing import List, Optional, Union
 import numpy as np
 import torch
+print(f'\n Number of visible CUDA devices: {torch.cuda.device_count()}')  # 显示当前可见的 GPU 数量
+for i in range(torch.cuda.device_count()):
+    print(f" · GPU {i}: {torch.cuda.get_device_name(i)}")
+print('\n')
+
 import torch.nn.functional as F
 
 from evo2 import Evo2
@@ -71,7 +78,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Test Evo2 Model Forward Pass")
     parser.add_argument("--model_name", choices=['evo2_7b', 'evo2_40b', 'evo2_7b_base', 'evo2_40b_base', 'evo2_1b_base'], 
-                       default='evo2_7b',
+                       default='evo2_40b',
                        help="Model to test")
     
     args = parser.parse_args()
@@ -82,9 +89,11 @@ def main():
     
     # Initialize model
     model = Evo2(args.model_name)
+    print(model.model.state_dict().keys())
     
     # Read sequences
-    sequences = read_prompts('vortex/test/data/prompts.csv')
+    # sequences = read_prompts('vortex/test/data/prompts.csv')
+    sequences = read_prompts('/home/tianang/projects/evo2/vortex/test/data/prompts.csv')
     
     # Test forward pass
     accuracies, losses = test_forward_pass(
