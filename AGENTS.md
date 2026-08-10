@@ -11,4 +11,6 @@
   window 参数、tensor shape/dtype，以及每个 window 的 record/index/start/end 血缘。
 - FASTA 文件、checkpoint、tensor、cache、日志和实验输出不得进入 Git。发布前运行：
   `python -m pytest -q tests`、`python -m build`、`git diff --check`。
+- `.github/workflows/apexoracle.yml` 在 Python 3.11/3.12 CPU 环境运行同一 focused tests 并构建
+  source/wheel archives；40B GPU smoke 仍是独立的 release gate。
 - 对 upstream 文件的修改保持最小化；不得向 `ArcInstitute/evo2` 的 remote 推送 ApexOracle commit。
