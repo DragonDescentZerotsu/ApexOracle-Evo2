@@ -13,4 +13,7 @@
   `python -m pytest -q tests`、`python -m build`、`git diff --check`。
 - `.github/workflows/apexoracle.yml` 在 Python 3.11/3.12 CPU 环境运行同一 focused tests 并构建
   source/wheel archives；40B GPU smoke 仍是独立的 release gate。
+- 2026-08-10 Evo-2-40B release smoke 已使用 `vtx==1.1.0`、两张 H100 和正式缓存权重通过：合成
+  two-record FASTA 产生 7 个有序 windows，tensor 为 `[7,8192]` / `torch.bfloat16`，7/7 rows 非零且
+  全部 finite；manifest coordinates、partial flags、shape/dtype 与 tensor SHA-256 均通过复核。
 - 对 upstream 文件的修改保持最小化；不得向 `ArcInstitute/evo2` 的 remote 推送 ApexOracle commit。
