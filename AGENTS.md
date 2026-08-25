@@ -9,6 +9,11 @@
   不加载模型；`--plan-detail files` 可按需输出逐文件明细。
 - 每个输入 FASTA 输出 `<stem>.pt` 和 `<stem>.manifest.json`；manifest 记录输入 SHA-256、模型、层、
   window 参数、tensor shape/dtype，以及每个 window 的 record/index/start/end 血缘。
+- 新任务固定使用 `per_record_zero_based_v1` window indexing：每条 FASTA record/contig 都从 start=0
+  独立建窗，只有输出 `window_index` 跨 record 连续。历史 reviewer producer 的全局 `chunk_id` 会漏掉
+  后续 contig，只能通过 recovery tag 与 Core 的 frozen compatibility audit 复现，不得作为新 embedding
+  的 producer contract。回归验证为
+  `python -m pytest -q tests/test_apexoracle_windowing.py tests/test_apexoracle_cli.py`。
 - FASTA 文件、checkpoint、tensor、cache、日志和实验输出不得进入 Git。发布前运行：
   `python -m pytest -q tests`、`python -m build`、`git diff --check`。
 - `.github/workflows/apexoracle.yml` 在 Python 3.11/3.12 CPU 环境运行同一 focused tests 并构建

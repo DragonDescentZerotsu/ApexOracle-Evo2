@@ -9,6 +9,7 @@ from typing import Iterator, Sequence
 from Bio import SeqIO
 
 FASTA_SUFFIXES = frozenset({".fa", ".fasta", ".fna", ".ffn", ".fas"})
+WINDOW_INDEXING_CONTRACT = "per_record_zero_based_v1"
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,9 @@ def iter_fasta_windows(
     Window coordinates are zero-based half-open intervals within each FASTA record.
     Each record starts its own coordinate system at zero. By default, a terminal
     shorter-than-``chunk_length`` window is retained whenever its start is inside the
-    record, matching the ApexOracle saved-tensor convention.
+    record. The per-record start reset is intentional: a historical reviewer producer
+    used one global counter across records and could omit later contigs, but that indexing
+    is not valid for new embedding artifacts.
     """
 
     _validate_window_parameters(chunk_length, step_length)

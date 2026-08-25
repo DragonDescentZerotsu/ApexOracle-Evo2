@@ -30,6 +30,7 @@ def test_plan_only_reports_all_records_without_loading_model(
     assert payload["file_count"] == 1
     assert payload["record_count"] == 2
     assert payload["window_count"] == 4
+    assert payload["window_indexing_contract"] == "per_record_zero_based_v1"
     assert "files" not in payload
     assert not output_dir.exists()
 

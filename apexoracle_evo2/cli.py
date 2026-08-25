@@ -13,7 +13,12 @@ from typing import Any
 import torch
 
 from .extraction import extract_window_embeddings
-from .windowing import FastaWindow, discover_fasta_files, iter_fasta_windows
+from .windowing import (
+    WINDOW_INDEXING_CONTRACT,
+    FastaWindow,
+    discover_fasta_files,
+    iter_fasta_windows,
+)
 
 DEFAULT_LAYERS = {
     "evo2_40b": "blocks.46.mlp.l3",
@@ -146,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             "chunk_length": args.chunk_length,
             "step_length": args.step_length,
             "include_partial": not args.full_windows_only,
+            "window_indexing_contract": WINDOW_INDEXING_CONTRACT,
             "file_count": len(file_summaries),
             "record_count": sum(item["record_count"] for item in file_summaries),
             "window_count": sum(item["window_count"] for item in file_summaries),
@@ -186,7 +192,10 @@ def main(argv: list[str] | None = None) -> int:
             "chunk_length": args.chunk_length,
             "step_length": args.step_length,
             "include_partial": not args.full_windows_only,
+            "window_indexing_contract": WINDOW_INDEXING_CONTRACT,
             "pooling": "valid_token_mean",
+            "record_count": len({window.record_index for window in windows}),
+            "window_count": len(windows),
             "tensor_file": tensor_path.name,
             "tensor_sha256": sha256_file(tensor_path),
             "tensor_shape": list(tensor.shape),

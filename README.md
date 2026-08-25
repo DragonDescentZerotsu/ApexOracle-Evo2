@@ -302,8 +302,12 @@ CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
 ```
 
 For a directory input, supported FASTA files are processed in filename order. Records and windows
-retain their input order. Checkpoints, FASTA files, tensors, and other generated assets are not
-stored in this repository.
+retain their input order. Window coordinates restart at zero for every FASTA record, and manifests
+identify this behavior as `per_record_zero_based_v1`. This is the required contract for new
+embedding artifacts. Historical reviewer tensors that used a cross-record global window counter
+remain reproducible only through their frozen legacy producer/audit path and must not be used as
+the indexing contract for new tasks. Checkpoints, FASTA files, tensors, and other generated assets
+are not stored in this repository.
 
 ## Dataset
 

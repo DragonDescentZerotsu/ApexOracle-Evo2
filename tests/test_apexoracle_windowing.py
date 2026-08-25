@@ -62,6 +62,27 @@ def test_full_windows_only_is_applied_per_record(tmp_path: Path) -> None:
     ]
 
 
+def test_each_record_resets_its_start_after_a_long_first_contig(tmp_path: Path) -> None:
+    """Guard against the historical producer's cross-record global counter bug."""
+
+    fasta = tmp_path / "multi_contig.fasta"
+    fasta.write_text(
+        ">long\n" + "A" * 21_500 + "\n>short\n" + "C" * 500 + "\n",
+        encoding="utf-8",
+    )
+
+    windows = list(iter_fasta_windows(fasta))
+
+    assert [(window.record_id, window.start, window.end) for window in windows] == [
+        ("long", 0, 11_000),
+        ("long", 10_000, 21_000),
+        ("long", 20_000, 21_500),
+        ("short", 0, 500),
+    ]
+    assert [window.record_window_index for window in windows] == [0, 1, 2, 0]
+    assert [window.window_index for window in windows] == [0, 1, 2, 3]
+
+
 def test_discovery_is_sorted_and_rejects_stem_collisions(tmp_path: Path) -> None:
     (tmp_path / "b.fna").write_text(">b\nAC\n", encoding="utf-8")
     (tmp_path / "a.fasta").write_text(">a\nGT\n", encoding="utf-8")
