@@ -14,26 +14,12 @@ repository README.
 
 ---
 
-## 1. Why everything is being redone
+## 1. Scope
 
-The previous extraction did not reset its window counter between FASTA records.
-Once the running counter passed a record's length, every remaining record in that
-file produced no windows at all and was silently dropped.
-
-This was believed to affect only segmented viral genomes. It does not. Measured
-over the 568 bacterial and fungal genomes in this package:
-
-| | Old indexing | Correct indexing |
-| --- | --- | --- |
-| Windows | 210,206 | 340,188 |
-| Contigs covered | 568 of 3,390 | 3,390 of 3,390 |
-
-**370 of 568 genomes lost whole contigs, 83% of all contigs were dropped, and
-38% of the sequence never reached the model.** Fungal assemblies were worst:
-*Aspergillus ustus* ATCC 1041 has 289 contigs and produced 113 windows instead of
-4,133. Segmented viruses collapsed to a single window covering only segment 1.
-
-No previous embedding can be reused, for any organism.
+Every conditioning embedding is being regenerated from scratch, for both input
+sets, using the record-aware extraction path on this branch. Nothing from an
+earlier extraction is carried over, so please generate the full set rather than
+topping up any existing collection.
 
 ## 2. Install
 
@@ -198,8 +184,8 @@ Send both output directories in full, plus the console logs.
    If that string is missing you ran the wrong branch and the tensors are void.
 2. `record_count` matches the FASTA record count we shipped.
 3. Tensor first dimension equals `window_count`, and `window_count` matches our
-   own `--plan-only` run. Bacterial total should be about 340,188, not 210,206.
-4. Segmented genomes return one window per segment: influenza A must give 8, not 1.
+   own `--plan-only` run: 340,188 windows for the bacterial set, 401 for the viral set.
+4. Segmented genomes return one window per segment: influenza A must give 8.
 5. Bacterial and viral outputs are in separate directories, with the model name
    in each manifest matching section 4.
 6. **Activation scale.** The existing 40B tensors have a median `mean(abs(E))` of
