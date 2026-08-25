@@ -50,13 +50,12 @@ tracks upstream ArcInstitute Evo 2 and does not contain the extraction CLI.
 
 ## 3. Get the data
 
-The genomes are a private dataset on the Hub. If you get a 404, ask us to add
-your Hub account; the repository is
+The genomes are a public dataset on the Hub:
 [`Kiria-Nozan/apexoracle-genome-handoff`](https://huggingface.co/datasets/Kiria-Nozan/apexoracle-genome-handoff).
+No account or token is needed.
 
 ```bash
 pip install -U "huggingface_hub[cli]"
-huggingface-cli login
 huggingface-cli download Kiria-Nozan/apexoracle-genome-handoff \
   --repo-type dataset --local-dir apexoracle-genomes
 cd apexoracle-genomes
