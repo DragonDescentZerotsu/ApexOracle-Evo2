@@ -1,335 +1,196 @@
-# Evo 2: Genome modeling and design across all domains of life
+# ApexOracle genome embedding re-extraction
 
-![Evo 2](evo2.jpg)
+Everything needed to regenerate the ApexOracle conditioning embeddings is in this
+directory. If you only read one page, read this one.
 
-Evo 2 is a state of the art DNA language model for long context modeling and design. Evo 2 models DNA sequences at single-nucleotide resolution at up to 1 million base pair context length using the [StripedHyena 2](https://github.com/Zymrael/savanna/blob/main/paper.pdf) architecture. Evo 2 was pretrained using [Savanna](https://github.com/Zymrael/savanna). Evo 2 was trained autoregressively on [OpenGenome2](https://huggingface.co/datasets/arcinstitute/opengenome2), a dataset containing 8.8 trillion tokens from all domains of life.
+**The job:** run one extraction command over `genomes/bacteria/` and a second over
+`genomes/virus/`, with a different model for each, and send back the tensors and
+manifests.
 
-We describe Evo 2 in our paper:
-["Genome modeling and design across all domains of life with Evo 2"](https://www.nature.com/articles/s41586-026-10176-5).
+This branch replaces the upstream Evo 2 landing page with these instructions. The
+original ArcInstitute README is preserved as
+[`UPSTREAM_README.md`](UPSTREAM_README.md), and `main` still carries it as the
+repository README.
 
-> [!NOTE]
-> - **Evo 2 published**: read more in [Nature](https://www.nature.com/articles/s41586-026-10176-5).
-> - **Evo 2 20B released**: 40B-level performance with double the speed, read more [here](https://github.com/ArcInstitute/evo2/releases/tag/v0.5.0).
-> - **Light install for 7B models**: option compatible with more hardware, see [Installation](#installation).
+---
 
-## Contents
+## 1. Why everything is being redone
 
-- [Setup](#setup)
-  - [Requirements](#requirements)
-  - [Installation](#installation)
-  - [Docker](#docker)
-- [Usage](#usage)
-  - [Checkpoints](#checkpoints)
-  - [Forward](#forward)
-  - [Embeddings](#embeddings)
-  - [Generation](#generation)
-- [Notebooks](#notebooks)
-- [Nvidia NIM](#nvidia-nim)
-- [Dataset](#dataset)
-- [Training and Finetuning](#training-and-finetuning)
-- [Citation](#citation)
+The previous extraction did not reset its window counter between FASTA records.
+Once the running counter passed a record's length, every remaining record in that
+file produced no windows at all and was silently dropped.
 
-## Setup
+This was believed to affect only segmented viral genomes. It does not. Measured
+over the 568 bacterial and fungal genomes in this package:
 
-This repo is for running Evo 2 locally for inference or generation, using our [Vortex](https://github.com/Zymrael/vortex) inference code. For training and finetuning, see the section [here](#training-and-finetuning).
-You can run Evo 2 without any installation using the [Nvidia Hosted API](https://build.nvidia.com/arc/evo2-40b).
-You can also self-host an instance using Nvidia NIM. See the [Nvidia NIM](#nvidia-nim) section for more 
-information.
+| | Old indexing | Correct indexing |
+| --- | --- | --- |
+| Windows | 210,206 | 340,188 |
+| Contigs covered | 568 of 3,390 | 3,390 of 3,390 |
 
-### Requirements
+**370 of 568 genomes lost whole contigs, 83% of all contigs were dropped, and
+38% of the sequence never reached the model.** Fungal assemblies were worst:
+*Aspergillus ustus* ATCC 1041 has 289 contigs and produced 113 windows instead of
+4,133. Segmented viruses collapsed to a single window covering only segment 1.
 
-Evo 2 is built on the Vortex inference repo, see the [Vortex github](https://github.com/Zymrael/vortex) for more details and Docker option.
+No previous embedding can be reused, for any organism.
 
-**System requirements**
-- [OS] Linux (official) or WSL2 (limited support)
-- [Software]
-	- CUDA: 12.1+ with compatible NVIDIA drivers
-	- cuDNN: 9.3+
-	- Compiler: GCC 9+ or Clang 10+ with C++17 support
-	- Python 3.11 or 3.12
-- Recommended Torch 2.6.x or 2.7.x
-
-**FP8 and Transformer Engine requirements**
-
-The 40B, 20B, and 1B models require FP8 via [Transformer Engine](https://github.com/NVIDIA/TransformerEngine) for numerical accuracy and a Nvidia Hopper GPU. The 7B models can run in bfloat16 without Transformer Engine on any supported GPU.
-
-| Model | FP8 (Transformer Engine) Required |
-|-------|-----------------------------------|
-| `evo2_7b` / `evo2_7b_262k` / `evo2_7b_base`   | No |
-| `evo2_20b` | Yes |
-| `evo2_40b` / `evo2_40b_base` | Yes |
-| `evo2_1b_base` | Yes |
-
-Always validate model outputs after configuration changes or on different hardware by using the tests.
-
-### Installation
-
-**Full install**
-
-Install [Transformer Engine](https://github.com/NVIDIA/TransformerEngine) and [Flash Attention](https://github.com/Dao-AILab/flash-attention/tree/main) first, then install Evo 2. We recommend using conda to install Transformer Engine:
-```bash
-conda install -c nvidia cuda-nvcc cuda-cudart-dev
-conda install -c conda-forge transformer-engine-torch=2.3.0
-pip install flash-attn==2.8.0.post2 --no-build-isolation
-pip install evo2
-```
-
-**Light install (7B models only, no Transformer Engine)**
-
-Evo 2 7B models can run without Transformer Engine or FP8-capable hardware. If you run into issues installing Flash Attention, see the [Flash Attention GitHub](https://github.com/Dao-AILab/flash-attention/tree/main) for system requirements and troubleshooting.
+## 2. Install
 
 ```bash
-# A compatible PyTorch must be installed before flash attention, for example: pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
-pip install flash-attn==2.8.0.post2 --no-build-isolation
-pip install evo2
-```
-
-**From source**
-
-```bash
-git clone https://github.com/arcinstitute/evo2
-cd evo2
+git clone https://github.com/DragonDescentZerotsu/ApexOracle-Evo2.git
+cd ApexOracle-Evo2
+git checkout virus-extension
 pip install -e .
+python -m pytest tests/ -q          # expect 10 passed
 ```
 
-**Verify installation**
+The branch is `virus-extension`. The fix and its regression test live there; `main`
+tracks upstream ArcInstitute Evo 2 and does not contain the extraction CLI.
+
+## 3. What is in this directory
+
+```
+genomes/bacteria/<name>.fasta        568 bacterial and fungal genomes
+genomes/virus/<name>.fasta            80 viral genomes
+text/virus/<name>.txt                 80 viral descriptions   (section 7)
+manifests/virus_genome_manifest.tsv   per-genome provenance
+manifests/target_to_genome.tsv        DRAVP target -> genome file
+SHA256SUMS                            checksums for everything above
+```
+
+Verify first:
 
 ```bash
-python -m evo2.test.test_evo2_generation --model_name evo2_7b  # or evo2_1b_base, evo2_20b, evo2_40b
+sha256sum -c SHA256SUMS
 ```
 
-### Docker
+Viral filenames encode a space as `～` and a slash as `^`, because names such as
+`influenza A virus A/PR/8/34` cannot be stored literally. Treat the stems as
+opaque and do not normalise them. A genome file and its description file always
+share a stem.
 
-Evo 2 can be run using Docker (shown below), Singularity, or Apptainer.
+## 4. Two input sets, two different models
 
-```bash
-docker build -t evo2 .
-docker run -it --rm --gpus '"device=0"' -v ./huggingface:/root/.cache/huggingface evo2 bash
-```
-Note: The volume mount (-v) preserves downloaded models between container runs and specifies where they are saved.
+This is the one thing that must not be mixed up.
 
-Once inside the container:
+| Input set | Genomes | Model | Layer |
+| --- | --- | --- | --- |
+| `genomes/bacteria/` | 568 | stock, **non-fine-tuned Evo 2 40B** | `blocks.46.mlp.l3` (frozen default) |
+| `genomes/virus/` | 80 | **our fine-tuned Evo 2 20B** | you choose, see section 6 |
 
-```bash
-python -m evo2.test.test_evo2_generation --model_name evo2_7b
-```
+The two are different representation spaces and feed separate downstream models.
+Keep the outputs in separate directories and do not merge the manifests.
 
-## Usage
+> **The viral checkpoint is yours.** It is the Evo 2 20B viral LoRA you trained
+> from the `Evo2_virus` handoff, so we do not ship it. Note that the handoff
+> README originally requested a 40B base and the run was actually done on 20B;
+> 20B is the one we want. Load the artifact from that run and record the exact
+> checkpoint identity and the `--model-name` you used, because the manifest is
+> the only thing tying these tensors back to a specific training run.
 
-### Checkpoints
+## 5. Commands
 
-We provide the following model checkpoints, hosted on [HuggingFace](https://huggingface.co/arcinstitute):
-| Checkpoint Name                        | Description |
-|----------------------------------------|-------------|
-| `evo2_40b`  | 40B parameter model with 1M context |
-| `evo2_20b`  | 20B parameter model with 1M context |
-| `evo2_7b`  | 7B parameter model with 1M context |
-| `evo2_40b_base`  | 40B parameter model with 8K context |
-| `evo2_7b_base`  | 7B parameter model with 8K context |
-| `evo2_1b_base`  | Smaller 1B parameter model with 8K context |
-| `evo2_7b_262k`  | 7B parameter model with 262K context |
-| `evo2_7b_microviridae`  | 7B parameter base model fine-tuned on Microviridae genomes |
-
-**Note:** The 40B model requires multiple H100 GPUs. Vortex automatically handles device placement, splitting the model across available CUDA devices.
-
-**Optional: Triton inference kernels**
-
-Evo 2 can dispatch Triton kernels from [Vortex PR #77](https://github.com/Zymrael/vortex/pull/77). They require `vtx>=1.1.0`. Enable them when loading a model for faster inference:
-
-```python
-from evo2 import Evo2
-evo2_model = Evo2('evo2_7b', use_kernels=True) # enable inference kernels
-```
-
-to test, pass `--use_kernels` to the test scripts:
-
-```bash
-python -m evo2.test.test_evo2_generation --model_name evo2_7b --use_kernels
-```
-
-### Forward
-
-Evo 2 can be used to score the likelihoods across a DNA sequence.
-
-```python
-import torch
-from evo2 import Evo2
-
-evo2_model = Evo2('evo2_7b')
-
-sequence = 'ACGT'
-input_ids = torch.tensor(
-    evo2_model.tokenizer.tokenize(sequence),
-    dtype=torch.int,
-).unsqueeze(0).to('cuda:0')
-
-outputs, _ = evo2_model(input_ids)
-logits = outputs[0]
-
-print('Logits: ', logits)
-print('Shape (batch, length, vocab): ', logits.shape)
-```
-
-### Embeddings
-
-Evo 2 embeddings can be saved for use downstream. We find that intermediate embeddings work better than final embeddings, see our paper for details.
-
-```python
-import torch
-from evo2 import Evo2
-
-evo2_model = Evo2('evo2_7b')
-
-sequence = 'ACGT'
-input_ids = torch.tensor(
-    evo2_model.tokenizer.tokenize(sequence),
-    dtype=torch.int,
-).unsqueeze(0).to('cuda:0')
-
-layer_name = 'blocks.28.mlp.l3'
-
-outputs, embeddings = evo2_model(input_ids, return_embeddings=True, layer_names=[layer_name])
-
-print('Embeddings shape: ', embeddings[layer_name].shape)
-```
-
-### Generation
-
-Evo 2 can generate DNA sequences based on prompts.
-
-```python
-from evo2 import Evo2
-
-evo2_model = Evo2('evo2_7b')
-
-output = evo2_model.generate(prompt_seqs=["ACGT"], n_tokens=400, temperature=1.0, top_k=4)
-
-print(output.sequences[0])
-```
-
-## Notebooks
-
-We provide example notebooks.
-
-The [BRCA1 scoring notebook](https://github.com/ArcInstitute/evo2/blob/main/notebooks/brca1/brca1_zero_shot_vep.ipynb) shows zero-shot *BRCA1* variant effect prediction. This example includes a walkthrough of:
-- Performing zero-shot *BRCA1* variant effect predictions using Evo 2
-- Reference vs alternative allele normalization
-
-The [generation notebook](https://github.com/ArcInstitute/evo2/blob/main/notebooks/generation/generation_notebook.ipynb) shows DNA sequence completion with Evo 2. This example shows:
-- DNA prompt based generation and 'DNA autocompletion'
-- How to get and prompt using phylogenetic species tags for generation
-
-The [exon classifier notebook](https://github.com/ArcInstitute/evo2/blob/main/notebooks/exon_classifier/exon_classifier.ipynb) demonstrates exon classification using Evo 2 embeddings. This example shows:
-- Running the Evo 2 based exon classifier
-- Performance metrics and visualization
-
-The [sparse autoencoder (SAE) notebook](https://github.com/ArcInstitute/evo2/blob/main/notebooks/sparse_autoencoder/sparse_autoencoder.ipynb) explores interpretable features learned by Evo 2. This example includes:
-- Running and visualizing Evo 2 SAE features
-- Demonstrating SAE features on a part of the *E. coli* genome
-
-
-## Nvidia NIM
-
-Evo 2 is available on [Nvidia NIM](https://catalog.ngc.nvidia.com/containers?filters=&orderBy=scoreDESC&query=evo2&page=&pageSize=) and [hosted API](https://build.nvidia.com/arc/evo2-40b).
-
-- [Documentation](https://docs.nvidia.com/nim/bionemo/evo2/latest/overview.html)
-- [Quickstart](https://docs.nvidia.com/nim/bionemo/evo2/latest/quickstart-guide.html)
-
-The quickstart guides users through running Evo 2 on the NVIDIA NIM using a python or shell client after starting NIM. An example python client script is shown below. This is the same way you would interact with the [Nvidia hosted API](https://build.nvidia.com/arc/evo2-40b?snippet_tab=Python).
-
-```python
-#!/usr/bin/env python3
-import requests
-import os
-import json
-from pathlib import Path
-
-key = os.getenv("NVCF_RUN_KEY") or input("Paste the Run Key: ")
-
-r = requests.post(
-    url=os.getenv("URL", "https://health.api.nvidia.com/v1/biology/arc/evo2-40b/generate"),
-    headers={"Authorization": f"Bearer {key}"},
-    json={
-        "sequence": "ACTGACTGACTGACTG",
-        "num_tokens": 8,
-        "top_k": 1,
-        "enable_sampled_probs": True,
-    },
-)
-
-if "application/json" in r.headers.get("Content-Type", ""):
-    print(r, "Saving to output.json:\n", r.text[:200], "...")
-    Path("output.json").write_text(r.text)
-elif "application/zip" in r.headers.get("Content-Type", ""):
-    print(r, "Saving large response to data.zip")
-    Path("data.zip").write_bytes(r.content)
-else:
-    print(r, r.headers, r.content)
-```
-
-
-### Very long sequences
-
-You can use [Savanna](https://github.com/Zymrael/savanna) or [Nvidia BioNemo](https://github.com/NVIDIA/bionemo-framework) for embedding long sequences. Vortex can currently compute over very long sequences via teacher prompting, however please note that forward pass on long sequences may currently be slow.
-
-### ApexOracle genome embeddings
-
-This fork adds a record-aware extraction CLI for the genome-window representations consumed by
-ApexOracle. The ApexOracle defaults use 11,000 nt windows, a 10,000 nt step, the Evo 2 40B
-`blocks.46.mlp.l3` activation, and mean pooling over valid (non-padding) tokens. Every tensor is
-accompanied by a JSON manifest containing FASTA, model, layer, coordinate, and tensor provenance.
-The fork version `0.6.0+apexoracle.1` is based on ArcInstitute Evo 2 upstream commit `53f1959` and
-retains the upstream Apache-2.0 license and notices.
-
-Validate the complete FASTA window plan without loading model weights:
+Dry-run the window plan first. It needs no GPU and no model weights, and it is
+the cheapest way to confirm your copy of the data matches ours:
 
 ```bash
 apexoracle-evo2-extract \
-  --input genome.fasta \
-  --output-dir genome_embeddings \
-  --plan-only
+  --input genomes/bacteria \
+  --output-dir out/bacteria_40b \
+  --plan-only --plan-detail files
 ```
 
-Run extraction after installing Evo 2 and making the required GPUs available:
+Bacteria and fungi, stock 40B:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
-  --input genome.fasta \
-  --output-dir genome_embeddings \
+  --input genomes/bacteria \
+  --output-dir out/bacteria_40b \
   --model-name evo2_40b \
   --batch-size 3 \
   --input-device cuda:0
 ```
 
-For a directory input, supported FASTA files are processed in filename order. Records and windows
-retain their input order. Window coordinates restart at zero for every FASTA record, and manifests
-identify this behavior as `per_record_zero_based_v1`. This is the required contract for new
-embedding artifacts. Historical reviewer tensors that used a cross-record global window counter
-remain reproducible only through their frozen legacy producer/audit path and must not be used as
-the indexing contract for new tasks. Checkpoints, FASTA files, tensors, and other generated assets
-are not stored in this repository.
+Viruses, fine-tuned 20B:
 
-## Dataset
-
-The OpenGenome2 dataset used for pretraining Evo2 is available on [HuggingFace ](https://huggingface.co/datasets/arcinstitute/opengenome2). Data is available either as raw fastas or as JSONL files which include preprocessing and data augmentation.
-
-## Training and Finetuning
-
-Evo 2 was trained using [Savanna](https://github.com/Zymrael/savanna), an open source framework for training alternative architectures.
-
-To train or finetune Evo 2, you can use [Savanna](https://github.com/Zymrael/savanna) or [Nvidia BioNemo](https://github.com/NVIDIA/bionemo-framework) which provides a [Evo 2 finetuning tutorial here](https://github.com/NVIDIA/bionemo-framework/blob/ca16c2acf9bf813d020b6d1e2d4e1240cfef6a69/docs/docs/user-guide/examples/bionemo-evo2/fine-tuning-tutorial.ipynb).
-
-## Citation
-
-If you find these models useful for your research, please cite the relevant papers
-
+```bash
+CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
+  --input genomes/virus \
+  --output-dir out/virus_20b_ft \
+  --model-name <FINE_TUNED_20B_NAME> \
+  --layer-name blocks.21.mlp.l3 \
+  --batch-size 3 \
+  --input-device cuda:0
 ```
-@article{Brixi2026,
-    author  = {Brixi, Garyk and Durrant, Matthew G. and Ku, Jerome and Naghipourfar, Mohsen and Poli, Michael and Sun, Gwanggyu and Brockman, Greg and Chang, Daniel and Fanton, Alison and Gonzalez, Gabriel A. and King, Samuel H. and Li, David B. and Merchant, Aditi T. and Nguyen, Eric and Ricci-Tam, Chiara and Romero, David W. and Schmok, Jonathan C. and Taghibakhshi, Ali and Vorontsov, Anton and Yang, Brandon and Deng, Myra and Gorton, Liv and Nguyen, Nam and Wang, Nicholas K. and Pearce, Michael T. and Simon, Elana and Adams, Etowah and Amador, Zachary J. and Ashley, Euan A. and Baccus, Stephen A. and Dai, Haoyu and Dillmann, Steven and Ermon, Stefano and Guo, Daniel and Herschl, Michael H. and Ilango, Rajesh and Janik, Ken and Lu, Amy X. and Mehta, Reshma and Mofrad, Mohammad R. K. and Ng, Madelena Y. and Pannu, Jaspreet and Ré, Christopher and St. John, John and Sullivan, Jeremy and Tey, Joseph and Viggiano, Ben and Zhu, Kevin and Zynda, Greg and Balsam, Daniel and Collison, Patrick and Costa, Anthony B. and Hernandez-Boussard, Tina and Ho, Eric and Liu, Ming-Yu and McGrath, Thomas and Powell, Kimberly and Pinglay, Sudarshan and Burke, Dave P. and Goodarzi, Hani and Hsu, Patrick D. and Hie, Brian L.},
-    title   = {Genome modelling and design across all domains of life with Evo 2},
-    journal = {Nature},
-    year    = {2026},
-    doi     = {10.1038/s41586-026-10176-5},
-    url     = {https://doi.org/10.1038/s41586-026-10176-5},
-}
-```
+
+Do not change `--chunk-length` or `--step-length`: the contract is 11,000 nt
+windows with a 10,000 nt step. Do not pass `--full-windows-only` — many viral
+segments are shorter than 11,000 nt and would vanish.
+
+Expect roughly 340,000 windows for the bacterial set and about 400 for the viral
+set, so the bacterial run dominates the cost.
+
+## 6. Choosing the 20B layer
+
+There is no upstream recommendation. We checked: the ArcInstitute README gives one
+example, `blocks.28.mlp.l3`, and it is for the 7B; the NVIDIA NIM documentation
+explicitly declines to give a default. So this is a judgement call.
+
+| Model | Blocks | Hidden | Layer | Relative depth |
+| --- | --- | --- | --- | --- |
+| Evo 2 7B | 32 | 4096 | `blocks.28.mlp.l3` | 87.5% |
+| Evo 2 40B | 50 | 8192 | `blocks.46.mlp.l3` | 92% |
+| **Evo 2 20B** | **24** | **8192** | **your choice** | — |
+
+`blocks.21.mlp.l3` matches the only published upstream example at 87.5%;
+`blocks.22.mlp.l3` matches our 40B choice at 92%. The 20B and 40B share hidden
+size 8192, so either is dimensionally compatible downstream.
+
+The viral set is small — 3.4 MB of sequence, about 400 windows — so a sweep over
+blocks 20 through 23 is cheap if you have the capacity. Otherwise pick one and
+record it. It must be passed explicitly; without `--layer-name` a model with no
+frozen default fails with a clear error rather than guessing.
+
+## 7. Text descriptions
+
+The strain encoder also consumes one text description per genome, and the 80
+viral ones are in `text/virus/`. This part does **not** use Evo 2:
+
+- model `YBXL/Med-LLaMA3-8B`, revision `567e7e71d8b6b433d8bc494f8112176bec4afccf`
+- hidden state index `-2` (penultimate)
+- the virus name decoded from the filename stem is replaced with the literal
+  string `This strain` before encoding
+- save a token-by-feature `float32` tensor
+
+The helper CLI lives in the ApexOracle repository, not the Evo 2 one. Tell us if
+you would rather we run this step; it needs no large GPU.
+
+## 8. What to send back
+
+Per input FASTA, one tensor and one JSON manifest:
+
+- tensor, shape `[n_windows, hidden_size]`, pooled by `valid_token_mean` over
+  non-padding tokens
+- manifest carrying FASTA path and SHA-256, model name, layer name,
+  `window_indexing_contract`, `chunk_length`, `step_length`, `record_count`,
+  `window_count`, tensor SHA-256 and shape
+
+Send both output directories in full, plus the console logs.
+
+## 9. What we check on arrival
+
+1. `window_indexing_contract == "per_record_zero_based_v1"` in every manifest.
+   If that string is missing you ran the wrong branch and the tensors are void.
+2. `record_count` matches the FASTA record count we shipped.
+3. Tensor first dimension equals `window_count`, and `window_count` matches our
+   own `--plan-only` run. Bacterial total should be about 340,188, not 210,206.
+4. Segmented genomes return one window per segment: influenza A must give 8, not 1.
+5. Bacterial and viral outputs are in separate directories, with the model name
+   in each manifest matching section 4.
+6. **Activation scale.** The existing 40B tensors have a median `mean(abs(E))` of
+   about `2.2e-15`, and ApexOracle compensates with a fixed `1e14` multiplier. We
+   will recompute this for both new sets, because a fine-tuned model may not land
+   on the same scale and the multiplier would then be wrong. Nothing for you to
+   do beyond sending the tensors, but if you notice all-zero, NaN or inf tensors,
+   say so rather than shipping them.
