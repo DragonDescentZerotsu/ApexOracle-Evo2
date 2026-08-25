@@ -183,18 +183,9 @@ Per input FASTA, one tensor and one JSON manifest:
 
 Send both output directories in full, plus the console logs.
 
-## 9. What we check on arrival
+Two things worth checking before you send:
 
-1. `window_indexing_contract == "per_record_zero_based_v1"` in every manifest.
-   If that string is missing you ran the wrong branch and the tensors are void.
-2. `record_count` matches the FASTA record count we shipped.
-3. Tensor first dimension equals `window_count`, and `window_count` matches our
-   own `--plan-only` run: 340,188 windows for the bacterial set, 401 for the viral set.
-4. Segmented genomes return one window per segment: influenza A must give 8.
-5. Bacterial and viral outputs are in separate directories, with the model name
-   in each manifest matching section 4.
-6. **Activation scale.** ApexOracle compensates its genome embeddings with a
-   fixed `1e14` multiplier, calibrated on an earlier model. We will recompute the
-   scale for both new sets, since neither is expected to land on the old value. Nothing for you to
-   do beyond sending the tensors, but if you notice all-zero, NaN or inf tensors,
-   say so rather than shipping them.
+- The window totals should be **340,188** for the bacterial set and **401** for
+  the viral set. `--plan-only` prints these without touching a GPU, so it is a
+  cheap way to confirm the run covered everything.
+- If any tensor comes out all-zero, NaN or inf, tell us rather than shipping it.
