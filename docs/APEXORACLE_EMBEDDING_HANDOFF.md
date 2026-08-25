@@ -1,135 +1,103 @@
-# ApexOracle embedding re-extraction handoff
+# ApexOracle genome embedding re-extraction
 
-This document specifies one job: regenerate **all** ApexOracle conditioning embeddings
-from scratch, for bacteria and for viruses, using the record-aware extraction path in
-this fork.
+Everything needed to regenerate the ApexOracle conditioning embeddings is in this
+directory. If you only read one page, read this one.
 
-Nothing from the previous embedding release should be reused. The previous producer
-used a cross-record global window counter, which silently dropped every FASTA record
-after the first once the counter passed that record's length. Single-contig bacterial
-genomes were unaffected in practice, but the indexing is wrong in general and it is
-catastrophic for segmented viral genomes: an 8-segment influenza genome collapsed to a
-single window covering only segment 1.
+**The job:** run one extraction command over `genomes/bacteria/` and a second over
+`genomes/virus/`, with a different model for each, and send back the tensors and
+manifests.
 
-## 1. Two input sets, two different models
+---
 
-This is the single most important instruction in this document.
+## 1. Why everything is being redone
 
-| Input set | Genomes | Model | Layer |
-| --- | --- | --- | --- |
-| Bacteria / fungi | 568 | **stock, non-fine-tuned Evo 2 40B** | `blocks.46.mlp.l3` (frozen default) |
-| Viruses | 80 | **our fine-tuned Evo 2 20B** | see section 4 — not yet decided |
+The previous extraction did not reset its window counter between FASTA records.
+Once the running counter passed a record's length, every remaining record in that
+file produced no windows at all and was silently dropped.
 
-The two sets are **not** in the same representation space and must never be mixed
-inside one model input. They are consumed by separate downstream models: the bacterial
-embeddings feed AMP MIC regression and small-molecule antibiotic classification, and the
-viral embeddings feed a separate antiviral-peptide regression model.
+This was believed to affect only segmented viral genomes. It does not. Measured
+over the 568 bacterial and fungal genomes in this package:
 
-Keep the two output directories separate. Do not merge the manifests.
+| | Old indexing | Correct indexing |
+| --- | --- | --- |
+| Windows | 210,206 | 340,188 |
+| Contigs covered | 568 of 3,390 | 3,390 of 3,390 |
 
-> **TO BE FILLED BEFORE THE RUN:** the fine-tuned Evo 2 20B checkpoint location and the
-> `--model-name` value it should be loaded under. The checkpoint is not in this
-> repository and is not on the H100 host.
+**370 of 568 genomes lost whole contigs, 83% of all contigs were dropped, and
+38% of the sequence never reached the model.** Fungal assemblies were worst:
+*Aspergillus ustus* ATCC 1041 has 289 contigs and produced 113 windows instead of
+4,133. Segmented viruses collapsed to a single window covering only segment 1.
 
-## 2. Code and version
+No previous embedding can be reused, for any organism.
+
+## 2. Install
 
 ```bash
 git clone https://github.com/DragonDescentZerotsu/ApexOracle-Evo2.git
 cd ApexOracle-Evo2
-git checkout codex/fix-multi-contig-windowing
+git checkout virus-extension
 pip install -e .
+python -m pytest tests/ -q          # expect 10 passed
 ```
 
-This fork is `0.6.0+apexoracle.1`, based on ArcInstitute Evo 2 upstream commit `53f1959`.
+The branch is `virus-extension`. The fix and its regression test live there; `main`
+tracks upstream ArcInstitute Evo 2 and does not contain the extraction CLI.
 
-Run the test suite before extracting anything:
+## 3. What is in this directory
+
+```
+genomes/bacteria/<name>.fasta        568 bacterial and fungal genomes
+genomes/virus/<name>.fasta            80 viral genomes
+text/virus/<name>.txt                 80 viral descriptions   (section 7)
+manifests/virus_genome_manifest.tsv   per-genome provenance
+manifests/target_to_genome.tsv        DRAVP target -> genome file
+SHA256SUMS                            checksums for everything above
+```
+
+Verify first:
 
 ```bash
-python -m pytest tests/ -q       # expect 10 passed
+sha256sum -c SHA256SUMS
 ```
 
-## 3. The windowing contract
+Viral filenames encode a space as `～` and a slash as `^`, because names such as
+`influenza A virus A/PR/8/34` cannot be stored literally. Treat the stems as
+opaque and do not normalise them. A genome file and its description file always
+share a stem.
 
-Every manifest this CLI writes contains:
+## 4. Two input sets, two different models
 
-```json
-"window_indexing_contract": "per_record_zero_based_v1"
-```
+This is the one thing that must not be mixed up.
 
-**Verify this string is present in every output manifest.** If it is absent, you are
-running the wrong code or the wrong branch, and the resulting tensors must be discarded.
+| Input set | Genomes | Model | Layer |
+| --- | --- | --- | --- |
+| `genomes/bacteria/` | 568 | stock, **non-fine-tuned Evo 2 40B** | `blocks.46.mlp.l3` (frozen default) |
+| `genomes/virus/` | 80 | **our fine-tuned Evo 2 20B** | you choose, see section 6 |
 
-Window coordinates restart at zero for every FASTA record. 9 of the 80 viral genomes are
-segmented and depend on this:
+The two are different representation spaces and feed separate downstream models.
+Keep the outputs in separate directories and do not merge the manifests.
 
-| Genome | Segments |
-| --- | --- |
-| rotavirus A | 11 |
-| influenza A virus | 8 |
-| influenza B virus | 8 |
-| Rift Valley fever virus | 3 |
-| Sin Nombre virus | 3 |
-| Junín virus | 2 |
-| Pichindé virus | 2 |
-| Tacaribe virus | 2 |
-| red-spotted grouper nervous necrosis virus | 2 |
-
-Under the old indexing each of these produced exactly one window. Under this contract
-they produce one window per segment (more for segments over 11,000 nt).
-
-## 4. Layer selection
-
-For the 40B bacterial run, use the frozen default `blocks.46.mlp.l3`. Pass nothing; the
-CLI resolves it.
-
-For the 20B viral run there is **no frozen default and no upstream recommendation**. We
-checked both sources:
-
-- The ArcInstitute Evo 2 README gives exactly one example, `blocks.28.mlp.l3`, and it is
-  for the 7B model. It states only that intermediate embeddings work better than final
-  embeddings.
-- The NVIDIA NIM Evo 2 documentation covers 7B and 40B, explicitly declines to give a
-  default, and says only to use an intermediate layer or a layer's final MLP output.
-
-So the layer is a judgement call. Relative depth of the two known choices:
-
-| Model | Layers | Hidden size | Layer used | Relative depth |
-| --- | --- | --- | --- | --- |
-| Evo 2 7B | 32 | 4096 | `blocks.28.mlp.l3` | 87.5% |
-| Evo 2 40B | 50 | 8192 | `blocks.46.mlp.l3` | 92% |
-| **Evo 2 20B** | **24** | **8192** | **undecided** | — |
-
-Candidates for the 20B are `blocks.21.mlp.l3` (87.5%, matching the only published
-upstream example) and `blocks.22.mlp.l3` (92%, matching our 40B choice). The 20B and 40B
-share hidden size 8192, so either choice is dimensionally compatible downstream.
-
-**This choice is yours.** If you have capacity, extracting the 80 viral genomes is cheap
-(3.3 Mb of sequence total) and a 20/21/22/23 sweep is affordable; otherwise pick one and
-record it. The layer must be passed explicitly:
-
-```bash
---layer-name blocks.21.mlp.l3
-```
-
-Without `--layer-name`, a model with no frozen default fails with a clear error rather
-than guessing. That is intentional.
+> **NOT YET SUPPLIED:** the fine-tuned Evo 2 20B checkpoint, and the
+> `--model-name` to load it under. It is not in any repository. You cannot run
+> the viral half until we send it.
 
 ## 5. Commands
 
-Always dry-run the window plan first; it needs no GPU and no model weights:
+Dry-run the window plan first. It needs no GPU and no model weights, and it is
+the cheapest way to confirm your copy of the data matches ours:
 
 ```bash
 apexoracle-evo2-extract \
-  --input  Genome/ATCC \
+  --input genomes/bacteria \
   --output-dir out/bacteria_40b \
   --plan-only --plan-detail files
 ```
 
-Bacteria, stock 40B:
+Bacteria and fungi, stock 40B:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
-  --input  Genome/ATCC \
+  --input genomes/bacteria \
   --output-dir out/bacteria_40b \
   --model-name evo2_40b \
   --batch-size 3 \
@@ -140,7 +108,7 @@ Viruses, fine-tuned 20B:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
-  --input  Genome/Virus \
+  --input genomes/virus \
   --output-dir out/virus_20b_ft \
   --model-name <FINE_TUNED_20B_NAME> \
   --layer-name blocks.21.mlp.l3 \
@@ -148,69 +116,73 @@ CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
   --input-device cuda:0
 ```
 
-Do not change `--chunk-length` or `--step-length`. The ApexOracle contract is 11,000 nt
-windows with a 10,000 nt step, and terminal short windows are retained. Do not pass
-`--full-windows-only`; many viral segments are under 11,000 nt and would vanish.
+Do not change `--chunk-length` or `--step-length`: the contract is 11,000 nt
+windows with a 10,000 nt step. Do not pass `--full-windows-only` — many viral
+segments are shorter than 11,000 nt and would vanish.
 
-## 6. Inputs you receive
+Expect roughly 340,000 windows for the bacterial set and about 400 for the viral
+set, so the bacterial run dominates the cost.
 
-```
-Genome/ATCC/<stem>.fasta                        568 bacterial genomes
-Genome/Virus/<stem>.fasta                        80 viral genomes
-Text_Description/Virus/Text/<stem>.txt           80 viral descriptions
-manifests/virus_genome_manifest.tsv              per-genome provenance
-manifests/target_to_genome.tsv                   DRAVP target -> genome
-SHA256SUMS                                       checksums for everything above
-```
+## 6. Choosing the 20B layer
 
-Verify before starting:
+There is no upstream recommendation. We checked: the ArcInstitute README gives one
+example, `blocks.28.mlp.l3`, and it is for the 7B; the NVIDIA NIM documentation
+explicitly declines to give a default. So this is a judgement call.
 
-```bash
-sha256sum -c SHA256SUMS
-```
+| Model | Blocks | Hidden | Layer | Relative depth |
+| --- | --- | --- | --- | --- |
+| Evo 2 7B | 32 | 4096 | `blocks.28.mlp.l3` | 87.5% |
+| Evo 2 40B | 50 | 8192 | `blocks.46.mlp.l3` | 92% |
+| **Evo 2 20B** | **24** | **8192** | **your choice** | — |
 
-Viral filenames use the ApexOracle `text-only` encoding, where `～` stands for a space
-and `^` for a forward slash, because names such as `influenza A virus A/PR/8/34` cannot
-be stored literally. Treat the stems as opaque; do not normalize them. The genome file
-and its description file always share a stem.
+`blocks.21.mlp.l3` matches the only published upstream example at 87.5%;
+`blocks.22.mlp.l3` matches our 40B choice at 92%. The 20B and 40B share hidden
+size 8192, so either is dimensionally compatible downstream.
 
-## 7. Expected outputs
+The viral set is small — 3.4 MB of sequence, about 400 windows — so a sweep over
+blocks 20 through 23 is cheap if you have the capacity. Otherwise pick one and
+record it. It must be passed explicitly; without `--layer-name` a model with no
+frozen default fails with a clear error rather than guessing.
 
-Per input FASTA, one tensor plus one JSON manifest:
+## 7. Text descriptions
 
-- tensor: `float32` or `bfloat16`, shape `[n_windows, hidden_size]`, pooled by
-  `valid_token_mean` over non-padding tokens
-- manifest: FASTA path and SHA-256, model name, layer name,
+The strain encoder also consumes one text description per genome, and the 80
+viral ones are in `text/virus/`. This part does **not** use Evo 2:
+
+- model `YBXL/Med-LLaMA3-8B`, revision `567e7e71d8b6b433d8bc494f8112176bec4afccf`
+- hidden state index `-2` (penultimate)
+- the virus name decoded from the filename stem is replaced with the literal
+  string `This strain` before encoding
+- save a token-by-feature `float32` tensor
+
+The helper CLI lives in the ApexOracle repository, not the Evo 2 one. Tell us if
+you would rather we run this step; it needs no large GPU.
+
+## 8. What to send back
+
+Per input FASTA, one tensor and one JSON manifest:
+
+- tensor, shape `[n_windows, hidden_size]`, pooled by `valid_token_mean` over
+  non-padding tokens
+- manifest carrying FASTA path and SHA-256, model name, layer name,
   `window_indexing_contract`, `chunk_length`, `step_length`, `record_count`,
   `window_count`, tensor SHA-256 and shape
 
-Return both directories in full, plus the console logs.
+Send both output directories in full, plus the console logs.
 
-## 8. Text-modality embeddings
-
-The ApexOracle strain encoder also consumes a text description per genome. The 80 viral
-descriptions ship with this package. They follow the same four-section layout as the
-existing bacterial descriptions, so the existing producer works unchanged.
-
-This part does **not** use Evo 2. The contract is:
-
-- model `YBXL/Med-LLaMA3-8B`, revision `567e7e71d8b6b433d8bc494f8112176bec4afccf`
-- take hidden state index `-2` (penultimate)
-- before encoding, the virus name decoded from the filename stem is replaced with the
-  literal string `This strain`
-- save a token-by-feature `float32` tensor
-
-The helper CLI for this lives in the ApexOracle repository
-(`scripts/prepare_data/embed_strain_texts.py`), not in this one. Tell us if you would
-rather we run this step ourselves; it needs no large GPU.
-
-## 9. Acceptance checks we will run
+## 9. What we check on arrival
 
 1. `window_indexing_contract == "per_record_zero_based_v1"` in every manifest.
-2. `record_count` in each manifest equals the FASTA record count we shipped.
-3. Tensor first dimension equals `window_count`, and `window_count` equals the count our
-   own `--plan-only` run produces for the same input.
-4. The 9 segmented viral genomes have `window_count >= segment_count`, and specifically
-   influenza A returns 8 windows rather than 1.
-5. Bacterial and viral tensors are in separate directories with separate manifests, and
-   the model name recorded in each matches section 1.
+   If that string is missing you ran the wrong branch and the tensors are void.
+2. `record_count` matches the FASTA record count we shipped.
+3. Tensor first dimension equals `window_count`, and `window_count` matches our
+   own `--plan-only` run. Bacterial total should be about 340,188, not 210,206.
+4. Segmented genomes return one window per segment: influenza A must give 8, not 1.
+5. Bacterial and viral outputs are in separate directories, with the model name
+   in each manifest matching section 4.
+6. **Activation scale.** The existing 40B tensors have a median `mean(abs(E))` of
+   about `2.2e-15`, and ApexOracle compensates with a fixed `1e14` multiplier. We
+   will recompute this for both new sets, because a fine-tuned model may not land
+   on the same scale and the multiplier would then be wrong. Nothing for you to
+   do beyond sending the tensors, but if you notice all-zero, NaN or inf tensors,
+   say so rather than shipping them.
