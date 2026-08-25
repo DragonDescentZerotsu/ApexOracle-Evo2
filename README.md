@@ -48,7 +48,22 @@ python -m pytest tests/ -q          # expect 10 passed
 The branch is `virus-extension`. The fix and its regression test live there; `main`
 tracks upstream ArcInstitute Evo 2 and does not contain the extraction CLI.
 
-## 3. What is in this directory
+## 3. Get the data
+
+The genomes are a private dataset on the Hub. If you get a 404, ask us to add
+your Hub account; the repository is
+[`Kiria-Nozan/apexoracle-genome-handoff`](https://huggingface.co/datasets/Kiria-Nozan/apexoracle-genome-handoff).
+
+```bash
+pip install -U "huggingface_hub[cli]"
+huggingface-cli login
+huggingface-cli download Kiria-Nozan/apexoracle-genome-handoff \
+  --repo-type dataset --local-dir apexoracle-genomes
+cd apexoracle-genomes
+```
+
+About 3.3 GB, almost all of it the bacterial and fungal FASTAs. The download
+contains:
 
 ```
 genomes/bacteria/<name>.fasta        568 bacterial and fungal genomes
