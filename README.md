@@ -4,8 +4,8 @@ Everything needed to regenerate the ApexOracle conditioning embeddings is in thi
 directory. If you only read one page, read this one.
 
 **The job:** run one extraction command over `genomes/bacteria/` and a second over
-`genomes/virus/`, with a different model for each, and send back the tensors and
-manifests.
+`genomes/virus/` — same Evo 2 20B base, with the viral LoRA adapter on the second
+— and send back the tensors and manifests.
 
 This branch replaces the upstream Evo 2 landing page with these instructions. The
 original ArcInstitute README is preserved as
@@ -31,8 +31,8 @@ pip install -e .
 python -m pytest tests/ -q          # expect 10 passed
 ```
 
-The branch is `virus-extension`. The fix and its regression test live there; `main`
-tracks upstream ArcInstitute Evo 2 and does not contain the extraction CLI.
+The branch is `virus-extension`. The extraction CLI lives only there; `main`
+tracks upstream ArcInstitute Evo 2 and does not have it.
 
 ## 3. Get the data
 
@@ -148,7 +148,7 @@ explicitly declines to give a default. So this is a judgement call.
 `blocks.21.mlp.l3` sits at 87.5%, matching the only published upstream example;
 `blocks.22.mlp.l3` sits at 92%.
 
-This choice now applies to both runs, so it governs all 340,188 bacterial windows
+This choice applies to both runs, so it governs all 340,188 bacterial windows
 as well as the viral set, and the two sets must use the same layer to stay
 comparable. The viral set is small enough — 3.4 MB, about 400 windows — that a
 sweep over blocks 20 through 23 there is cheap, and the winner can then be
