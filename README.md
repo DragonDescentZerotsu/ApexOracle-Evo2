@@ -76,11 +76,12 @@ This is the one thing that must not be mixed up.
 
 | Input set | Genomes | Model | Layer |
 | --- | --- | --- | --- |
-| `genomes/bacteria/` | 568 | stock, **non-fine-tuned Evo 2 40B** | `blocks.46.mlp.l3` (frozen default) |
+| `genomes/bacteria/` | 568 | stock **Evo 2 20B**, no adapter | same layer as the viral run |
 | `genomes/virus/` | 80 | **our fine-tuned Evo 2 20B** | you choose, see section 6 |
 
-The two are different representation spaces and feed separate downstream models.
-Keep the outputs in separate directories and do not merge the manifests.
+Both runs share the Evo 2 20B base; only the LoRA adapter differs. Use the same
+layer for both so the two sets stay comparable. Keep the outputs in separate
+directories and do not merge the manifests.
 
 > **The viral checkpoint is yours.** It is the Evo 2 20B viral LoRA you trained
 > from the `Evo2_virus` handoff, so we do not ship it. Note that the handoff
@@ -97,17 +98,18 @@ the cheapest way to confirm your copy of the data matches ours:
 ```bash
 apexoracle-evo2-extract \
   --input genomes/bacteria \
-  --output-dir out/bacteria_40b \
+  --output-dir out/bacteria_20b \
   --plan-only --plan-detail files
 ```
 
-Bacteria and fungi, stock 40B:
+Bacteria and fungi, stock 20B with no adapter:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 apexoracle-evo2-extract \
   --input genomes/bacteria \
-  --output-dir out/bacteria_40b \
-  --model-name evo2_40b \
+  --output-dir out/bacteria_20b \
+  --model-name evo2_20b \
+  --layer-name blocks.21.mlp.l3 \
   --batch-size 3 \
   --input-device cuda:0
 ```
@@ -143,14 +145,17 @@ explicitly declines to give a default. So this is a judgement call.
 | Evo 2 40B | 50 | 8192 | `blocks.46.mlp.l3` | 92% |
 | **Evo 2 20B** | **24** | **8192** | **your choice** | — |
 
-`blocks.21.mlp.l3` matches the only published upstream example at 87.5%;
-`blocks.22.mlp.l3` matches our 40B choice at 92%. The 20B and 40B share hidden
-size 8192, so either is dimensionally compatible downstream.
+`blocks.21.mlp.l3` sits at 87.5%, matching the only published upstream example;
+`blocks.22.mlp.l3` sits at 92%.
 
-The viral set is small — 3.4 MB of sequence, about 400 windows — so a sweep over
-blocks 20 through 23 is cheap if you have the capacity. Otherwise pick one and
-record it. It must be passed explicitly; without `--layer-name` a model with no
-frozen default fails with a clear error rather than guessing.
+This choice now applies to both runs, so it governs all 340,188 bacterial windows
+as well as the viral set, and the two sets must use the same layer to stay
+comparable. The viral set is small enough — 3.4 MB, about 400 windows — that a
+sweep over blocks 20 through 23 there is cheap, and the winner can then be
+applied to the bacterial run.
+
+Whatever you pick, pass it explicitly to both commands and record it. Without
+`--layer-name` the 20B fails with a clear error rather than guessing.
 
 ## 7. Text descriptions
 
@@ -188,9 +193,8 @@ Send both output directories in full, plus the console logs.
 4. Segmented genomes return one window per segment: influenza A must give 8.
 5. Bacterial and viral outputs are in separate directories, with the model name
    in each manifest matching section 4.
-6. **Activation scale.** The existing 40B tensors have a median `mean(abs(E))` of
-   about `2.2e-15`, and ApexOracle compensates with a fixed `1e14` multiplier. We
-   will recompute this for both new sets, because a fine-tuned model may not land
-   on the same scale and the multiplier would then be wrong. Nothing for you to
+6. **Activation scale.** ApexOracle compensates its genome embeddings with a
+   fixed `1e14` multiplier, calibrated on an earlier model. We will recompute the
+   scale for both new sets, since neither is expected to land on the old value. Nothing for you to
    do beyond sending the tensors, but if you notice all-zero, NaN or inf tensors,
    say so rather than shipping them.
