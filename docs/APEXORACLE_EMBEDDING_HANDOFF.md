@@ -77,9 +77,12 @@ This is the one thing that must not be mixed up.
 The two are different representation spaces and feed separate downstream models.
 Keep the outputs in separate directories and do not merge the manifests.
 
-> **NOT YET SUPPLIED:** the fine-tuned Evo 2 20B checkpoint, and the
-> `--model-name` to load it under. It is not in any repository. You cannot run
-> the viral half until we send it.
+> **The viral checkpoint is yours.** It is the Evo 2 20B viral LoRA you trained
+> from the `Evo2_virus` handoff, so we do not ship it. Note that the handoff
+> README originally requested a 40B base and the run was actually done on 20B;
+> 20B is the one we want. Load the artifact from that run and record the exact
+> checkpoint identity and the `--model-name` you used, because the manifest is
+> the only thing tying these tensors back to a specific training run.
 
 ## 5. Commands
 
